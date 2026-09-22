@@ -6,15 +6,21 @@ import {
 } from "@modelcontextprotocol/client";
 import { createGameServer } from "../../src/server/app.js";
 import type { ChessEvent } from "../../src/core/local-protocol.js";
-let app: ReturnType<typeof createGameServer>, client: Client, url: string;
+import { mkdtemp, rm, readdir, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+let app: ReturnType<typeof createGameServer>,
+  client: Client,
+  url: string,
+  store: string;
 test.beforeEach(async () => {
+  store = await mkdtemp(join(tmpdir(), "ink-browser-"));
   app = createGameServer(
     {
       mode: "local",
-      mcp: true,
       port: 0,
       host: "127.0.0.1",
-      store: "/private/tmp",
+      store,
       trustedProxy: [],
     },
     fileURLToPath(new URL("../../dist/web/", import.meta.url)),
@@ -29,6 +35,63 @@ test.beforeEach(async () => {
 test.afterEach(async () => {
   await client?.close();
   await app?.close();
+  await rm(store, { recursive: true, force: true });
+});
+test("settings install both clients without changing an ongoing board and preserve play after a conflict", async ({
+  page,
+}) => {
+  await page.goto(url);
+  const boardId = await page.getByTestId("board-id").textContent();
+  await page.getByTestId("square-54").click();
+  await page.getByTestId("square-45").click();
+  await expect(page.getByTestId("move-0")).toContainText("兵九进一");
+  await page.getByRole("button", { name: "偏好设置" }).click();
+  await expect(
+    page.getByRole("heading", { name: "AI 对弈接入" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("mcp-store")).toHaveText(store);
+  expect(await readdir(store)).toEqual([]);
+  await page
+    .getByRole("button", { name: "添加 Codex MCP", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Codex 已配置", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole("button", { name: "添加 Claude Code MCP", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Claude Code 已配置", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText("配置已写入，尚未确认 Agent 连接。"),
+  ).toBeVisible();
+  expect(
+    JSON.parse(await readFile(join(store, ".mcp.json"), "utf8")).mcpServers[
+      "ink-chess"
+    ].url,
+  ).toBe(url + "/mcp");
+  await page.screenshot({
+    path: "test-results/settings-mcp-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
+  await page.screenshot({
+    path: "test-results/settings-mcp-mobile.png",
+    fullPage: true,
+  });
+  await writeFile(join(store, ".mcp.json"), "[broken");
+  await page.getByRole("button", { name: "刷新接入状态" }).click();
+  await expect(page.getByTestId("mcp-claude")).toContainText("配置冲突");
+  await page.getByRole("button", { name: "完成设置" }).click();
+  await expect(page.getByTestId("board-id")).toHaveText(boardId!);
+  await expect(page.getByTestId("move-0")).toContainText("兵九进一");
+  await page.getByTestId("square-27").click();
+  await page.getByTestId("square-36").click();
+  await expect(page.getByTestId("move-1")).toContainText("卒1进1");
 });
 test("human and AI alternate through actual board clicks, wait locks one move, and exit keeps position", async ({
   page,

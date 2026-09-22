@@ -13,20 +13,35 @@ import { LocalSessions } from "./local-sessions.js";
 import { createChessMcp, localRequest } from "./chess-mcp.js";
 import { connectLocalSocket } from "./local-socket.js";
 import { loopback } from "./identity.js";
+import { createMcpConfiguration } from "./mcp-config.js";
+import { configurationRequest } from "./mcp-configuration-route.js";
 export const VERSION = "0.1.0";
 export function createGameServer(
   config: Config,
   webRoot = fileURLToPath(new URL("../web/", import.meta.url)),
 ) {
-  if (config.mcp && (config.mode !== "local" || !loopback(config.host)))
-    throw Error("MCP仅支持local模式和loopback监听地址");
-  const localSessions = config.mcp ? new LocalSessions() : null;
+  const mcpEnabled = config.mode === "local" && loopback(config.host);
+  const localSessions = mcpEnabled ? new LocalSessions() : null;
   const mcp = localSessions ? createChessMcp(localSessions) : null;
+  const configuration = createMcpConfiguration(config.store, () => {
+    const address = server.address();
+    const port =
+      address && typeof address !== "string" ? address.port : config.port;
+    return `http://${config.host.includes(":") ? `[${config.host}]` : config.host}:${port}/mcp`;
+  });
   const hostToken = randomBytes(32).toString("base64url");
   const lobby = new Lobby(config.mode, hostToken);
   const server = createServer(async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
+    if (req.url?.split("?")[0] === "/api/mcp/configuration") {
+      if (!mcpEnabled) {
+        res.writeHead(404).end();
+        return;
+      }
+      await configurationRequest(req, res, configuration);
+      return;
+    }
     if (mcp && req.url?.split("?")[0] === "/mcp") {
       try {
         await mcp.handle(req, res);
@@ -59,7 +74,7 @@ export function createGameServer(
             : JSON.stringify(
                 pathname === "/health"
                   ? { ok: true }
-                  : { mode: config.mode, version: VERSION, mcp: !!config.mcp },
+                  : { mode: config.mode, version: VERSION, mcp: mcpEnabled },
               ),
         );
         return;

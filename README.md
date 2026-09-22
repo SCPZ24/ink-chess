@@ -12,7 +12,7 @@
 npm ci
 npm run build
 npm start -- --mode local
-npm start -- --mode local --mcp --store ./.store/chess
+npm start -- --mode local --store ./.store/chess
 npm start -- --mode lan
 npm start -- --mode server --store ./store_files
 ```
@@ -30,7 +30,7 @@ npx @scpz24/ink-chess --mode server --store ./store_files
 | 参数 | 默认值与说明 |
 | --- | --- |
 | `--mode local\|lan\|server` | `local` |
-| `--mcp` | 显式开启本地 AI 对弈与 HTTP MCP；仅允许 local + loopback |
+| AI 对弈接入 | 在本地设置页添加 Codex / Claude Code，无需命令行参数 |
 | `--port 5678` | 端口占用时报错，绝不静默切换 |
 | `--host IP` | local 为 `127.0.0.1`，其余为 `0.0.0.0`；支持 IPv6 |
 | `--store PATH` | 启动时的工作目录；相对路径相对工作目录解析 |
@@ -76,20 +76,20 @@ flowchart LR
 
 优先级为命令行 > 配置文件 > 内置默认；CLI 覆盖值不自动写回。配置模块提供临时文件加原子替换的写入接口。昵称、招式动画、音效和减少动态效果保存在 `ink_chess_preferences` Cookie。棋局、棋谱、连接、房间和裁定均只保存在内存，停止进程即清除。
 
-开启 `--mcp` 时，还会在 `<store>/.codex/config.toml` 创建或更新本程序管理的项目级 MCP 区块。仅该区块随本次地址/端口更新，其他设置保留。不会修改全局 Codex 配置。详见 [Codex AI 对弈接入](docs/MCP.md)。
+普通 local 启动已具备本机 MCP 能力，但不会自动写入 Agent 配置。在设置页的“AI 对弈接入”点击相应按钮后，配置才会写入 store。支持 Codex 与 Claude Code 共存，轻量 `mcpInstallations` 元数据记录本程序管理的字段；其他配置保留，不修改全局配置。详见 [AI 对弈接入](docs/MCP.md)。
 
-## 与 Codex 对弈
+## 与 Codex / Claude Code 对弈
 
 ```bash
 # 本地开发版本
 npm run build
-npm start -- --mode local --mcp --store ./.store/chess
+npm start -- --mode local --store ./.store/chess
 
 # 正式发布后的同包入口
-npx @scpz24/ink-chess --mode local --mcp --store ~/Games/InkChess
+npx @scpz24/ink-chess --mode local --store ~/Games/InkChess
 ```
 
-在 Codex 中打开终端打印的 **store 目录作为下棋项目**，信任该项目后新建任务或重新加载 MCP；浏览器打开终端打印的网页。给 Agent 的任务示例：
+浏览器打开终端打印的网页，进入 **偏好设置 → AI 对弈接入**，点击“添加 Codex MCP”或“添加 Claude Code MCP”。然后在对应 Agent 中打开设置页显示的 **store 目录作为下棋项目**，信任项目并加载 MCP。配置成功不等于 Agent 已连接。给 Agent 的任务示例：
 
 > 请通过浏览器与我下象棋。读取页面上的棋盘标识，用 enter_chess 加入，默认你执黑。你的每一步通过页面点击完成，然后用 wait_for_next_move 静默等待我落子；每次使用工具返回的事件游标。结束时调用 quit_chess。
 
@@ -98,6 +98,8 @@ Agent 仍需具备可用的 computer use 或 browser use 工具。象棋 MCP 只
 等待先注册再开放人类的一着；返回例如“对方行棋：炮五平一。你可以继续观察棋盘行棋。”。服务收到取消通知、超时或连接断开时暂停交接；可重试或点击页面“退出 AI 对弈”。刷新页面会建立新棋局并结束旧会话。
 
 **Codex 0.153.4 的已知验收限制：** 实测中断模型回合没有取消底层 MCP 等待，不能保证立即关闭人类权限。停止 Agent 后请点击页面“退出 AI 对弈”。完整复现与验证范围见 [MCP 接入文档](docs/MCP.md)。
+
+Claude Code 配置包含 `.mcp.json` 与 `.claude/settings.json`，将工具超时设为 30 分钟，并为此项目关闭 MCP 自动后台化。旧 `--mcp` 仅保留 local 兼容并提示弃用，不再写入配置。Claude CLI 已验证项目配置发现与独立目录隔离；本机目前未登录，实际对弈、交互长等待与取消验收尚待完成。
 
 ## nginx
 

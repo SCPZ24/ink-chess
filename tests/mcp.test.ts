@@ -15,7 +15,7 @@ afterEach(async () => {
 async function start(mcp = true) {
   const app = createGameServer({
     mode: "local",
-    host: "127.0.0.1",
+    host: mcp ? "127.0.0.1" : "0.0.0.0",
     port: 0,
     store: "/private/tmp",
     trustedProxy: [],
@@ -132,7 +132,7 @@ it("pauses browser permissions when a real HTTP tool request is cancelled", asyn
   await expect.poll(() => b.view.ai?.phase).toBe("paused");
   expect(b.view.canMove).toBe(false);
 });
-it("does not expose MCP by default and rejects foreign origins and hosts", async () => {
+it("does not expose MCP for non-loopback listeners and rejects foreign origins and hosts", async () => {
   const disabled = await start(false);
   expect((await fetch(disabled.url + "/mcp")).status).toBe(404);
   const { url } = await start();

@@ -7,7 +7,6 @@ import { homedir } from "node:os";
 import assert from "node:assert/strict";
 import { chromium } from "@playwright/test";
 import { createGameServer } from "../dist/server/app.js";
-import { writeMcpConfig } from "../dist/server/mcp-config.js";
 
 // Keep fixtures inside the already trusted repository; CLI trust overrides are
 // intentionally insufficient to authorize previously untrusted project files.
@@ -25,7 +24,6 @@ const globalPath = join(
 const globalBefore = await readFile(globalPath).catch(() => null);
 const app = createGameServer({
   mode: "local",
-  mcp: true,
   host: "127.0.0.1",
   port: 0,
   store: chess,
@@ -49,7 +47,16 @@ app.server.on("request", (req, res) => {
     wire.push({ closed: req.method, finished: res.writableFinished }),
   );
 });
-await writeMcpConfig(chess, origin + "/mcp");
+assert.equal(
+  (
+    await fetch(origin + "/api/mcp/configuration", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent: "codex" }),
+    })
+  ).status,
+  200,
+);
 const codex = spawn("codex", ["app-server", "--stdio"], {
   cwd: temp,
   stdio: ["pipe", "pipe", "pipe"],

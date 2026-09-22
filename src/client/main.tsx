@@ -18,6 +18,7 @@ import {
 } from "../core/game.js";
 import type { PublicConfig, ClientMessage } from "../core/protocol.js";
 import { useLocalBoard } from "./useLocalBoard.js";
+import { McpSettings } from "./McpSettings.js";
 import type { LocalAction } from "../core/local-protocol.js";
 import { Board } from "./Board.js";
 import { useConnection } from "./useConnection.js";
@@ -651,7 +652,7 @@ function App() {
             role="dialog"
             aria-modal="true"
             aria-label="偏好设置"
-            className="dialog"
+            className="dialog settings-dialog"
           >
             <span className="eyebrow">随心落子</span>
             <h2>偏好设置</h2>
@@ -676,6 +677,7 @@ function App() {
             <p className="muted">
               偏好保存在当前浏览器 Cookie 中。音效由首次操作启用。
             </p>
+            {isLocal && <McpSettings enabled={mcpLocal} />}
             <button className="primary" onClick={() => setSettings(false)}>
               完成设置
             </button>

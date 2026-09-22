@@ -27,6 +27,7 @@ export interface Settings {
   host?: string;
   port?: number;
   trustedProxy?: string[];
+  mcpInstallations?: Record<string, unknown>;
 }
 export function parseFlags(args: string[]) {
   return parseArgs({
@@ -87,9 +88,14 @@ export async function resolveConfig(
     if (
       Object.keys(settings).some(
         (k) =>
-          !["schemaVersion", "mode", "host", "port", "trustedProxy"].includes(
-            k,
-          ),
+          ![
+            "schemaVersion",
+            "mode",
+            "host",
+            "port",
+            "trustedProxy",
+            "mcpInstallations",
+          ].includes(k),
       )
     )
       throw new Error("配置包含未知字段");
@@ -114,8 +120,8 @@ export async function resolveConfig(
     throw new Error("--port 应为 1 至 65535 的整数");
   if (typeof host !== "string" || !isIP(host))
     throw new Error("--host 应为有效 IPv4 或 IPv6 地址");
-  if (flags.mcp && (mode !== "local" || !loopback(host)))
-    throw new Error("MCP仅支持local模式和loopback监听地址");
+  if (flags.mcp && mode !== "local")
+    throw new Error("MCP 接入仅支持 local 模式，请从设置页添加。");
   if (
     !Array.isArray(trustedProxy) ||
     trustedProxy.some((ip) => typeof ip !== "string" || !isIP(ip))
@@ -126,7 +132,7 @@ export async function resolveConfig(
       "lan 模式须保留 loopback 可达性，请绑定 0.0.0.0、:: 或 loopback 地址",
     );
   return {
-    mcp: flags.mcp ?? false,
+    mcp: mode === "local" && loopback(host),
     mode: mode as Mode,
     host,
     port,

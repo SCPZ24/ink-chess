@@ -1,13 +1,16 @@
-# Codex 本地 AI 对弈
+# Codex / Claude Code 本地 AI 对弈
 
-启动 `ink-chess --mode local --mcp`，或发布后的 `npx @scpz24/ink-chess --mode local --mcp`。
-服务仅监听 loopback，网页、WebSocket、Streamable HTTP MCP 共用端口（默认 5678）。
-不支持 LAN/server 模式，不支持公网 MCP、stdio 或 Pi 专用适配。
+启动 `ink-chess --mode local`，或发布后的 `npx @scpz24/ink-chess --mode local`。
+打开游戏的“偏好设置 → AI 对弈接入”，分别点击添加 Codex / Claude Code。
+local 使用 loopback 时自动准备网页、WebSocket 和 Streamable HTTP MCP，共用端口（默认 5678）。
+启动不写入 Agent 配置；添加按钮不会重启服务或丢失正在进行的棋局。
+显式绑定非 loopback 时保留普通对弈，但禁用 AI 接入。LAN/server 不开放接入接口。
+旧 `--mcp` 仅在 local 中兼容并提示弃用，不再触发写入。
 
 ## 项目级配置
 
-所有生成文件位于 `--store`；未指定时使用启动目录。MCP 配置是
-`<store>/.codex/config.toml`，必须在 Codex 中打开并信任对应目录。
+所有生成文件位于 `--store`；未指定时使用启动目录。设置页显示目录绝对路径，不能从网页修改目录。
+Codex 配置是 `<store>/.codex/config.toml`，必须在 Codex 中打开并信任对应目录。
 使用自定义 store 后，Codex 不会自动从别的工作区读取配置。
 
 ```toml
@@ -19,10 +22,41 @@ enabled_tools = ["enter_chess", "wait_for_next_move", "quit_chess"]
 # END ink-chess managed MCP
 ```
 
-地址跟随实际 host/port，支持 IPv6。程序只更新管理标记中的内容。
+地址使用实际 host/port，支持 IPv6。地址变化后设置页显示“需要更新”，点击才会写入。
+Codex 只更新管理标记中的内容。
 文件损坏、同名非托管配置、异常标记、不可写路径或符号链接不会被覆盖。
-配置写入失败会关闭本次服务；端口占用不会生成配置。
+用户修改过的托管字段不会被覆盖。配置写入失败不会停止游戏；端口占用不会生成配置。
 不能以用户主目录为 store 覆盖全局 `.codex/config.toml`。
+
+Claude Code 会写入两个文件。`<store>/.mcp.json`：
+
+```json
+{
+  "mcpServers": {
+    "ink-chess": { "type": "http", "url": "http://127.0.0.1:5678/mcp", "timeout": 1800000 }
+  }
+}
+```
+
+`<store>/.claude/settings.json`：
+
+```json
+{
+  "env": { "CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS": "0" }
+}
+```
+
+Claude 的 `timeout` 单位为毫秒，Codex 为秒；游戏端保持 1740 秒。
+项目等待设置关闭该下棋项目内所有 MCP 长调用的自动后台化，避免人类思考时 Agent 自行继续。
+用户其他字段保留，不写自动授权规则。轻量所有权与上次写入值记录在 `ink-chess.settings.json` 的
+`mcpInstallations` 中，不包含会话或棋谱。
+Claude 配置和元数据统一验证、暂存后替换；失败回滚，回滚失败时设置页逐项显示实际文件状态。
+不要手改托管字段后期待按钮覆盖：出现冲突时需先自行恢复被改字段，再刷新状态。
+
+Claude Code 中打开同一目录并批准项目 MCP；浏览器操作还需要可用的 browser use 工具。
+官方 Chrome 集成使用 `claude --chrome`，需要相应登录与扩展，按钮不会安装扩展或登录账号。
+参考：[MCP 项目配置与超时](https://code.claude.com/docs/en/mcp)、
+[长调用后台化开关](https://code.claude.com/docs/en/env-vars)、[Chrome 集成](https://code.claude.com/docs/en/chrome)。
 
 停止服务后项目配置保留。其他未配置该服务的项目不会加载下棋工具，即使服务仍运行。
 同项目下的其他任务也可能加载工具；如需隔离，建立下棋专用工作目录。
@@ -41,7 +75,7 @@ enabled_tools = ["enter_chess", "wait_for_next_move", "quit_chess"]
 
 ```mermaid
 sequenceDiagram
-  participant A as Codex
+  participant A as Codex 或 Claude Code
   participant S as 游戏服务
   participant B as 共享棋盘
   A->>S: enter_chess（页面标识、AI执色）
@@ -83,7 +117,7 @@ AI 执黑时首次直接等待人类的红方首着。AI 执红时先通过页�
 - 页面“退出 AI 对弈”始终可在已连接状态下操作，不依赖 Agent 继续响应。
 
 同页面无法区分真实鼠标与 computer use 的点击。系统按执色和交接阶段限制操作，人类约定不代点 AI 棋子。
-项目级工具可见性由 Codex 的项目配置控制；本机 MCP 地址本身不提供跨操作系统用户的身份隔离。
+项目级工具可见性由对应 Agent 的项目配置控制；本机 MCP 地址本身不提供跨操作系统用户的身份隔离。
 
 **已知 Codex 限制（0.153.4，2026-09-22 实测）：** `turn/interrupt` 会停止模型回合，
 但本机实测中没有发送 MCP `notifications/cancelled`，也没有断开正在等待的 HTTP 请求。
@@ -92,10 +126,16 @@ AI 执黑时首次直接等待人类的红方首着。AI 执红时先通过页�
 标准 MCP 客户端的取消和断线测试通过，不能据此宣称 Codex 的停止按钮也已通过。
 这个客户端行为仍是完整验收的未通过项，不以缩短等待、轮询模型或监视 Codex 内部文件绕过。
 
+Claude Code 的行为需要独立实测，不从 Codex 或 SDK 推断。2026-09-23 本机 CLI 2.1.220
+返回未登录。真实 CLI 已验证项目配置发现与独立目录隔离：下棋目录列出 ink-chess（等待用户批准），
+另一目录没有 MCP 服务。登录后的真实工具加载、连续对弈、超过 310 秒的交互等待、主动取消及客户端退出均待验收。
+不能只用 `claude -p` 验证自动后台化，因为非交互模式默认行为不同。
+
 ## 验收
 
 `npm test`：规则、交接、HTTP工具和配置；`npm run test:e2e`：浏览器真实点击；
 `npm run test:package`：全新目录安装 tarball，验证只读包、MCP运行依赖及 store 边界。
+安装包测试会启动 Chromium，通过已安装网页的两个添加按钮配置 Agent；需要可用的 Playwright 浏览器。
 
 `npm run test:codex` 使用本机已登录的 Codex app-server，必须已信任当前仓库。
 它在仓库 `.store` 内生成临时兄弟工作目录，验证项目级发现与隔离、65秒工具等待，

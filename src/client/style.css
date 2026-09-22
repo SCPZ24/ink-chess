@@ -1094,3 +1094,63 @@ h1 {
   line-height: 1.6;
   color: #756c60;
 }
+.settings-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+}
+.mcp-settings {
+  border-top: 1px solid #d9cbb5;
+  margin: 20px 0;
+  padding-top: 16px;
+}
+.mcp-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.mcp-heading h3 {
+  margin: 0;
+}
+.mcp-heading button {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.mcp-path {
+  display: block;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  margin: 8px 0;
+}
+.mcp-address {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.mcp-agent {
+  padding: 14px 0;
+  border-top: 1px solid #dfd4c4;
+}
+.mcp-agent > button {
+  width: 100%;
+  margin-top: 6px;
+}
+.mcp-status {
+  font-size: 12px;
+  color: #78765f;
+}
+.mcp-status.conflict,
+.mcp-error {
+  color: #a83e2c;
+}
+.mcp-error {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.mcp-success {
+  background: #e8ecdf;
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.7;
+}

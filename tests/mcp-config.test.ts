@@ -26,16 +26,16 @@ afterEach(async () => {
     dirs.splice(0).map((p) => rm(p, { recursive: true, force: true })),
   );
 });
-it("enables MCP only explicitly in local loopback mode and resolves store normally", async () => {
+it("prepares MCP for loopback local mode without writing configurations", async () => {
   const dir = await temp();
   expect((await resolveConfig(["--mcp", "--store", "棋 局"], dir)).mcp).toBe(
     true,
   );
-  expect((await resolveConfig([], dir)).mcp).toBe(false);
+  expect((await resolveConfig([], dir)).mcp).toBe(true);
+  expect((await resolveConfig(["--host", "0.0.0.0"], dir)).mcp).toBe(false);
   for (const args of [
     ["--mcp", "--mode", "lan"],
     ["--mcp", "--mode", "server"],
-    ["--mcp", "--host", "0.0.0.0"],
   ])
     await expect(resolveConfig(args, dir)).rejects.toThrow(/MCP/);
   expect((await resolveConfig(["--mcp", "--host", "::1"], dir)).mcp).toBe(true);
