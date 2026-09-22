@@ -14,6 +14,7 @@ import { isIP } from "node:net";
 import type { Mode } from "../core/protocol.js";
 import { loopback, normalizeIp } from "./identity.js";
 export interface Config {
+  mcp?: boolean;
   mode: Mode;
   host: string;
   port: number;
@@ -34,6 +35,7 @@ export function parseFlags(args: string[]) {
     allowPositionals: false,
     options: {
       mode: { type: "string" },
+      mcp: { type: "boolean" },
       host: { type: "string" },
       port: { type: "string" },
       store: { type: "string" },
@@ -112,6 +114,8 @@ export async function resolveConfig(
     throw new Error("--port 应为 1 至 65535 的整数");
   if (typeof host !== "string" || !isIP(host))
     throw new Error("--host 应为有效 IPv4 或 IPv6 地址");
+  if (flags.mcp && (mode !== "local" || !loopback(host)))
+    throw new Error("MCP仅支持local模式和loopback监听地址");
   if (
     !Array.isArray(trustedProxy) ||
     trustedProxy.some((ip) => typeof ip !== "string" || !isIP(ip))
@@ -122,6 +126,7 @@ export async function resolveConfig(
       "lan 模式须保留 loopback 可达性，请绑定 0.0.0.0、:: 或 loopback 地址",
     );
   return {
+    mcp: flags.mcp ?? false,
     mode: mode as Mode,
     host,
     port,

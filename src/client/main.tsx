@@ -17,6 +17,8 @@ import {
   type Tactic,
 } from "../core/game.js";
 import type { PublicConfig, ClientMessage } from "../core/protocol.js";
+import { useLocalBoard } from "./useLocalBoard.js";
+import type { LocalAction } from "../core/local-protocol.js";
 import { Board } from "./Board.js";
 import { useConnection } from "./useConnection.js";
 import {
@@ -40,19 +42,31 @@ function App() {
     [confirmation, setConfirmation] = useState(false);
   const connection = useConnection(config, name, setError),
     isLocal = config?.mode === "local";
+  const mcpLocal = !!config?.mcp;
+  const localBoard = useLocalBoard(mcpLocal, setError);
+  const permitted = (type: LocalAction) =>
+    !mcpLocal ||
+    (localBoard.connected &&
+      !localBoard.pending &&
+      !!localBoard.view?.allowedActions.includes(type));
   const room = connection.view?.room,
-    game = room?.game ?? connection.view?.lastGame ?? local,
+    game =
+      localBoard.view?.game ?? room?.game ?? connection.view?.lastGame ?? local,
     ownSide = room?.side ?? game.turn;
   const flipped = isLocal ? flip : (ownSide === "black") !== flip;
   const playable =
     !!config &&
-    (isLocal ||
+    ((isLocal && (!mcpLocal || (localBoard.connected && !!localBoard.view))) ||
       (!!room &&
         room.members.length === 2 &&
         connection.status === "已连接")) &&
     !game.result &&
-    !connection.pending;
-  const canMove = playable && (isLocal || game.turn === ownSide);
+    !connection.pending &&
+    !localBoard.pending;
+  const canMove =
+    playable &&
+    (isLocal || game.turn === ownSide) &&
+    (!mcpLocal || !!localBoard.view?.canMove);
   const targets = useMemo(
     () =>
       selected !== null && canMove
@@ -82,7 +96,7 @@ function App() {
   useEffect(() => {
     setSelected(null);
     setConfirmation(false);
-  }, [game.id, game.version]);
+  }, [game.id, game.version, localBoard.view?.revision]);
   useEffect(() => {
     const rec = game.history.at(-1),
       key = `${game.id}:${game.ply}`;
@@ -126,6 +140,10 @@ function App() {
     type: "resign" | "offer-draw" | "accept-draw" | "decline-draw" | "rematch",
   ) =>
     attempt(() => {
+      if (mcpLocal) {
+        localBoard.send(type);
+        return;
+      }
       if (!isLocal) {
         connection.send({ type, gameId: game.id, version: game.version });
         return;
@@ -156,7 +174,8 @@ function App() {
     }
     attempt(() => {
       const move = { from: selected, to: square };
-      if (isLocal) setLocal(applyMove(game, move));
+      if (mcpLocal) localBoard.send("move", move);
+      else if (isLocal) setLocal(applyMove(game, move));
       else
         connection.send({
           type: "move",
@@ -237,7 +256,7 @@ function App() {
               <div>
                 <strong>
                   {isLocal
-                    ? `${sideName(side)}棋手`
+                    ? `${sideName(side)}棋手${localBoard.view?.ai?.side === side ? " · AI" : ""}`
                     : (room?.members.find((m) => m.side === side)?.name ??
                       "静候入席")}
                 </strong>
@@ -284,12 +303,16 @@ function App() {
             </div>
           </div>
           <div className="match-actions">
-            <button disabled={!playable} onClick={() => setConfirmation(true)}>
+            <button
+              disabled={!playable || !permitted("resign")}
+              onClick={() => setConfirmation(true)}
+            >
               认输
             </button>
             <button
               disabled={
                 !playable ||
+                !permitted("offer-draw") ||
                 game.ply < 50 ||
                 !!game.drawOffer ||
                 (!isLocal && ownSide !== game.turn)
@@ -303,11 +326,46 @@ function App() {
               ⇄　翻转棋盘
             </button>
           </div>
+          {mcpLocal && localBoard.view && (
+            <div className="ai-session" aria-live="polite">
+              <span className="label">棋盘标识</span>
+              <code data-testid="board-id">{localBoard.view.boardId}</code>
+              {localBoard.view.ai && (
+                <>
+                  <strong data-testid="ai-phase">
+                    {
+                      {
+                        ai: "AI 行棋",
+                        human: "轮到你了",
+                        handoff: "等待 AI 交接",
+                        paused: "交接已暂停",
+                        finished: "对局结束",
+                      }[localBoard.view.ai.phase]
+                    }
+                  </strong>
+                  <small>同一棋盘按执色交接，请勿代点 AI 的棋子。</small>
+                  <small>停止 Agent 后，请在此退出 AI 对弈。</small>
+                  <button
+                    disabled={!localBoard.connected || localBoard.pending}
+                    onClick={() => localBoard.send("quit-ai")}
+                  >
+                    退出 AI 对弈
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           <div className="connection-note">
             <span
-              className={`connection-dot ${isLocal || connection.status === "已连接" ? "online" : ""}`}
+              className={`connection-dot ${(isLocal ? !mcpLocal || localBoard.connected : connection.status === "已连接") ? "online" : ""}`}
             />
-            {isLocal ? "本地棋局 · 双方轮流操作" : connection.status}
+            {isLocal
+              ? mcpLocal
+                ? localBoard.connected
+                  ? "本地棋盘 · MCP 已启用"
+                  : "棋盘连接已断开"
+                : "本地棋局 · 双方轮流操作"
+              : connection.status}
             {!isLocal && connection.status === "已断开" && (
               <button onClick={connection.retry}>重新进入</button>
             )}
@@ -383,10 +441,11 @@ function App() {
                   <button
                     className="primary"
                     disabled={
-                      !isLocal &&
-                      (connection.pending ||
-                        room?.rematchReady ||
-                        connection.status !== "已连接")
+                      (mcpLocal && !permitted("rematch")) ||
+                      (!isLocal &&
+                        (connection.pending ||
+                          room?.rematchReady ||
+                          connection.status !== "已连接"))
                     }
                     onClick={() => action("rematch")}
                   >
@@ -498,10 +557,16 @@ function App() {
               {sideName(game.drawOffer)}提出和棋
               {(isLocal || ownSide !== game.drawOffer) && (
                 <>
-                  <button onClick={() => action("accept-draw")}>
+                  <button
+                    disabled={!permitted("accept-draw")}
+                    onClick={() => action("accept-draw")}
+                  >
                     同意和棋
                   </button>
-                  <button onClick={() => action("decline-draw")}>
+                  <button
+                    disabled={!permitted("decline-draw")}
+                    onClick={() => action("decline-draw")}
+                  >
                     继续对弈
                   </button>
                 </>

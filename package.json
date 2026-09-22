@@ -15,6 +15,7 @@
     "LICENSE",
     "licenses",
     "docs/RULES.md",
+    "docs/MCP.md",
     "examples"
   ],
   "engines": {
@@ -28,24 +29,30 @@
     "test:e2e": "playwright test",
     "prepack": "npm run build",
     "test:docker": "npm run build && node scripts/test-docker.mjs",
-    "test:package": "node scripts/test-package.mjs"
+    "test:package": "node scripts/test-package.mjs",
+    "test:codex": "npm run build && node scripts/test-codex-mcp.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "ipaddr.js": "^2.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "smol-toml": "1.8.0",
     "ws": "^8.18.3",
-    "ipaddr.js": "^2.2.0"
+    "zod": "4.6.5"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@playwright/test": "^1.58.0",
     "@types/node": "^22.19.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/ws": "^8.18.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.0",
-    "vitest": "^4.0.0",
-    "tsx": "^4.21.0",
-    "@playwright/test": "^1.58.0"
+    "vitest": "^4.0.0"
   },
   "license": "MIT"
 }

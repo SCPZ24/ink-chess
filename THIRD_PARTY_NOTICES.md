@@ -4,6 +4,9 @@
 - **React, React DOM, Scheduler** — Meta Platforms, Inc. and affiliates; MIT licenses in `licenses/`. React and React DOM are bundled in the compiled browser JavaScript.
 - **ws** — Einar Otto Stangvik and contributors; MIT license in `licenses/` and its installed dependency.
 - **ipaddr.js** — whitequark and contributors; MIT license in `licenses/` and its installed dependency.
+- **Official Model Context Protocol TypeScript SDK** (`@modelcontextprotocol/server`, `node`, `core`) — Anthropic, PBC; MIT licenses in installed packages and `licenses/`.
+- **Zod** — Colin McDonnell; MIT license in its installed package and `licenses/`.
+- **smol-toml** — smol-toml contributors; MIT license in its installed package and `licenses/`.
 
 Board artwork, SVG pieces, ink effects and synthesized move sounds are original to this project. No third-party game engine, image, audio recording or CDN runtime asset is included.
 

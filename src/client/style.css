@@ -1073,3 +1073,24 @@ h1 {
     max-width: 95px;
   }
 }
+
+.ai-session {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 14px;
+  background: #eee7d9;
+  border-left: 2px solid #a33a2e;
+}
+.ai-session code {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.ai-session strong {
+  color: #9b352b;
+}
+.ai-session small {
+  line-height: 1.6;
+  color: #756c60;
+}

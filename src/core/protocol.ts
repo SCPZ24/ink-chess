@@ -1,6 +1,7 @@
 import type { GameState, Move, Side } from "./types.js";
 export type Mode = "local" | "lan" | "server";
 export interface PublicConfig {
+  mcp?: boolean;
   mode: Mode;
   version: string;
 }

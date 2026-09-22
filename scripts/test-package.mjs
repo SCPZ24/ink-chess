@@ -14,6 +14,11 @@ import { join, resolve } from "node:path";
 import { createServer } from "node:net";
 import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
+import {
+  Client,
+  StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/client";
+import { parse } from "smol-toml";
 const exec = promisify(execFile),
   root = process.cwd(),
   temp = await mkdtemp(join(tmpdir(), "ink-chess-package-")),
@@ -127,18 +132,25 @@ try {
   const bin = join(install, "node_modules/.bin/ink-chess");
   assert.equal((await run(bin, ["--version"], temp)).stdout.trim(), "0.1.0");
   assert((await run(bin, ["--help"], temp)).stdout.includes("--trusted-proxy"));
-  for (const [i, mode] of ["local", "lan", "server"].entries()) {
-    const cwd = join(temp, `工作 目录 ${mode}`);
+  for (const [i, mode] of [
+    "local",
+    "lan",
+    "server",
+    "local",
+    "local",
+  ].entries()) {
+    const mcp = i >= 3;
+    const cwd = join(temp, `工作 目录 ${mode}${mcp ? `-mcp-${i}` : ""}`);
     await mkdir(cwd);
     const port = await freePort();
-    const bind = mode === "server" ? "::1" : "127.0.0.1";
+    const bind = mode === "server" || i === 4 ? "::1" : "127.0.0.1";
     const origin = `http://${bind.includes(":") ? `[${bind}]` : bind}:${port}`;
     const store =
       i === 0
         ? cwd
         : i === 1
           ? join(cwd, "相对 存储")
-          : join(temp, "绝对 存储");
+          : join(temp, `绝对 存储${mcp ? "-mcp" : ""}`);
     const args = [
       "--mode",
       mode,
@@ -146,6 +158,7 @@ try {
       bind,
       "--port",
       String(port),
+      ...(mcp ? ["--mcp"] : []),
       ...(i === 0 ? [] : ["--store", i === 1 ? "相对 存储" : store]),
     ];
     const { proc, output } = await launch(bin, args, cwd);
@@ -155,7 +168,7 @@ try {
       try {
         ready = (await fetch(`${origin}/health`)).ok;
       } catch {}
-      if (ready) break;
+      if (ready && output().includes(store)) break;
       await new Promise((r) => setTimeout(r, 100));
     }
     assert(ready, output());
@@ -163,6 +176,27 @@ try {
     assert.equal(output().includes("#host="), mode === "lan");
     const config = await (await fetch(`${origin}/api/config`)).json();
     assert.equal(config.mode, mode);
+    assert.equal(config.mcp, mcp);
+    if (mcp) {
+      const client = new Client({ name: "package-test", version: "1" });
+      try {
+        await client.connect(
+          new StreamableHTTPClientTransport(new URL(origin + "/mcp")),
+        );
+        assert.deepEqual(
+          (await client.listTools()).tools.map((t) => t.name).sort(),
+          ["enter_chess", "quit_chess", "wait_for_next_move"],
+        );
+      } finally {
+        await client.close();
+      }
+      const generated = parse(
+        await readFile(join(store, ".codex/config.toml"), "utf8"),
+      );
+      assert.equal(generated.mcp_servers["ink-chess"].url, origin + "/mcp");
+      assert.equal(generated.mcp_servers["ink-chess"].tool_timeout_sec, 1800);
+      assert.equal((await fetch(origin + "/.codex/config.toml")).status, 404);
+    }
     const html = await (await fetch(`${origin}/`)).text();
     assert(html.includes("水墨象棋"));
     const js = html.match(/src="([^"]+\.js)"/)[1];
@@ -178,10 +212,45 @@ try {
     await assert.rejects(run(bin, args, cwd), (e) =>
       e.stderr.includes("端口已被占用"),
     );
+    if (mcp) {
+      const collisionStore = join(temp, "collision-store");
+      await assert.rejects(
+        run(
+          bin,
+          [
+            "--mcp",
+            "--host",
+            bind,
+            "--port",
+            String(port),
+            "--store",
+            collisionStore,
+          ],
+          cwd,
+        ),
+        (e) => e.stderr.includes("端口已被占用"),
+      );
+      assert.deepEqual(await readdir(collisionStore), []);
+    }
     await stop(proc);
-    assert.deepEqual(await readdir(store), []);
+    assert.deepEqual(await readdir(store), mcp ? [".codex"] : []);
+    if (mcp) {
+      const file = join(store, ".codex/config.toml");
+      const original = await readFile(file, "utf8");
+      await writeFile(file, "[broken");
+      await assert.rejects(run(bin, args, cwd));
+      assert.equal(await readFile(file, "utf8"), "[broken");
+      // Startup failure must release the bound port.
+      const probe = createServer();
+      await new Promise((r, j) => {
+        probe.once("error", j);
+        probe.listen(port, bind, r);
+      });
+      await new Promise((r) => probe.close(r));
+      await writeFile(file, original);
+    }
     console.log(
-      `PASS: installed ${mode} CLI, assets, read-only package, port collision, ${i === 0 ? "default" : i === 1 ? "relative" : "absolute"} store`,
+      `PASS: installed ${mode}${mcp ? "+MCP" : ""} CLI, assets, read-only package, port collision, ${i === 0 ? "default" : i === 1 ? "relative" : "absolute"} store`,
     );
   }
   assert.equal(await hashTree(packageDir), before);

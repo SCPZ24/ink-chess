@@ -9,16 +9,33 @@ import { Lobby } from "./lobby.js";
 import { resolveIdentity } from "./identity.js";
 import { parseMessage, type ServerMessage } from "../core/protocol.js";
 import type { Config } from "./config.js";
+import { LocalSessions } from "./local-sessions.js";
+import { createChessMcp, localRequest } from "./chess-mcp.js";
+import { connectLocalSocket } from "./local-socket.js";
+import { loopback } from "./identity.js";
 export const VERSION = "0.1.0";
 export function createGameServer(
   config: Config,
   webRoot = fileURLToPath(new URL("../web/", import.meta.url)),
 ) {
+  if (config.mcp && (config.mode !== "local" || !loopback(config.host)))
+    throw Error("MCP仅支持local模式和loopback监听地址");
+  const localSessions = config.mcp ? new LocalSessions() : null;
+  const mcp = localSessions ? createChessMcp(localSessions) : null;
   const hostToken = randomBytes(32).toString("base64url");
   const lobby = new Lobby(config.mode, hostToken);
   const server = createServer(async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
+    if (mcp && req.url?.split("?")[0] === "/mcp") {
+      try {
+        await mcp.handle(req, res);
+      } catch {
+        if (!res.headersSent) res.writeHead(500).end();
+        else res.destroy();
+      }
+      return;
+    }
     res.setHeader(
       "Content-Security-Policy",
       "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
@@ -42,7 +59,7 @@ export function createGameServer(
             : JSON.stringify(
                 pathname === "/health"
                   ? { ok: true }
-                  : { mode: config.mode, version: VERSION },
+                  : { mode: config.mode, version: VERSION, mcp: !!config.mcp },
               ),
         );
         return;
@@ -102,6 +119,16 @@ export function createGameServer(
     perMessageDeflate: false,
   });
   server.on("upgrade", (req, socket, head) => {
+    if (localSessions && req.url === "/local-ws") {
+      if (!localRequest(req)) {
+        socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) =>
+        connectLocalSocket(ws, localSessions),
+      );
+      return;
+    }
     if (config.mode === "local" || req.url !== "/ws") {
       socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
       return;
@@ -199,6 +226,8 @@ export function createGameServer(
     });
   });
   async function close() {
+    localSessions?.shutdown();
+    await mcp?.close();
     lobby.shutdown();
     for (const client of wss.clients) client.terminate();
     await new Promise<void>((r) => wss.close(() => r()));
