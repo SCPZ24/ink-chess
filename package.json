@@ -1,0 +1,51 @@
+{
+  "name": "@scpz24/ink-chess",
+  "version": "0.1.0",
+  "private": true,
+  "description": "水墨象棋：本地、局域网与多人房间中国象棋",
+  "type": "module",
+  "bin": {
+    "ink-chess": "bin/ink-chess.mjs"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md",
+    "LICENSE",
+    "licenses",
+    "docs/RULES.md",
+    "examples"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "npm run build && npm start --",
+    "build": "tsc --noEmit && vite build && tsc -p tsconfig.server.json",
+    "start": "node bin/ink-chess.mjs",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "prepack": "npm run build",
+    "test:docker": "npm run build && node scripts/test-docker.mjs",
+    "test:package": "node scripts/test-package.mjs"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "ws": "^8.18.3",
+    "ipaddr.js": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0",
+    "vitest": "^4.0.0",
+    "tsx": "^4.21.0",
+    "@playwright/test": "^1.58.0"
+  },
+  "license": "MIT"
+}
