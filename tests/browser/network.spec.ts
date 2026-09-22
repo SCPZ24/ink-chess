@@ -73,6 +73,7 @@ test("server lobby creates and joins rooms, swaps sides on mutual rematch", asyn
   await start("server");
   const ac = await browser.newContext({
       extraHTTPHeaders: { "X-Real-IP": "192.0.2.31" },
+      viewport: { width: 390, height: 844 },
     }),
     bc = await browser.newContext({
       extraHTTPHeaders: { "X-Real-IP": "192.0.2.32" },
@@ -81,7 +82,7 @@ test("server lobby creates and joins rooms, swaps sides on mutual rematch", asyn
     const a = await ac.newPage(),
       b = await bc.newPage();
     for (const [page, name] of [
-      [a, "甲"],
+      [a, "甲方棋手这是一个十六字符长昵称"],
       [b, "乙"],
     ] as const) {
       await page.goto(url);
@@ -90,6 +91,13 @@ test("server lobby creates and joins rooms, swaps sides on mutual rematch", asyn
     }
     await a.getByRole("button", { name: "创建房间" }).click();
     await b.getByRole("button", { name: "加入", exact: true }).click();
+    await expect(
+      a.locator(".player-card strong").filter({ hasText: "甲方棋手" }),
+    ).toBeVisible();
+    expect(
+      await a.evaluate(() => document.documentElement.scrollWidth),
+    ).toBeLessThanOrEqual(390);
+    await expect(a.locator(".records-panel")).toBeHidden();
     await a.getByTestId("square-64").click();
     await a.getByTestId("square-67").click();
     await expect(b.getByTestId("move-0")).toContainText("炮八平五");
