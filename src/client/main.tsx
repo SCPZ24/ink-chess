@@ -81,7 +81,7 @@ function App() {
       id: string;
     } | null>(null),
     seen = useRef(""),
-    recordsEnd = useRef<HTMLDivElement>(null);
+    recordsScroll = useRef<HTMLDivElement>(null);
   useEffect(() => {
     fetch("/api/config")
       .then((r) => {
@@ -115,7 +115,6 @@ function App() {
         mate: game.result?.reason === "checkmate",
         id: key,
       });
-    recordsEnd.current?.scrollIntoView({ block: "nearest" });
   }, [
     game.id,
     game.ply,
@@ -124,6 +123,18 @@ function App() {
     preferences.effects,
     preferences.sound,
   ]);
+  // A resize event also covers rapid rotations whose final list size is unchanged.
+  // Scroll the notation viewport only; never move the document or the board.
+  useEffect(() => {
+    const list = recordsScroll.current;
+    if (!list) return;
+    const scrollToLatest = () => {
+      list.scrollTop = list.scrollHeight;
+    };
+    scrollToLatest();
+    window.addEventListener("resize", scrollToLatest);
+    return () => window.removeEventListener("resize", scrollToLatest);
+  }, [game.id, game.ply]);
   useEffect(() => {
     if (!effect) return;
     const timer = setTimeout(() => setEffect(null), effect.mate ? 1400 : 900);
@@ -205,6 +216,17 @@ function App() {
         : "和棋"
     : "";
   const lobby = config?.mode === "server" && !room;
+  const connected = isLocal
+    ? !mcpLocal || localBoard.connected
+    : connection.status === "已连接";
+  const boardDetails = mcpLocal && localBoard.view && (
+    <div className="board-details">
+      <span className="label">棋盘标识</span>
+      <code data-testid="board-id">{localBoard.view.boardId}</code>
+      <small>同一棋盘按执色交接，请勿代点 AI 的棋子。</small>
+      <small>停止 Agent 后，请在主界面退出 AI 对弈。</small>
+    </div>
+  );
   return (
     <div
       className={`app ${preferences.reduced ? "reduced-motion" : ""}`}
@@ -248,28 +270,30 @@ function App() {
               <em>{lobby ? "静候知音" : "自有乾坤"}</em>
             </h2>
           </div>
-          {(["black", "red"] as Side[]).map((side) => (
-            <div
-              key={side}
-              className={`player-card ${side} ${game.turn === side && !game.result ? "active" : ""}`}
-            >
-              <span className="avatar">{side === "red" ? "帅" : "将"}</span>
-              <div>
-                <strong>
-                  {isLocal
-                    ? `${sideName(side)}棋手${localBoard.view?.ai?.side === side ? " · AI" : ""}`
-                    : (room?.members.find((m) => m.side === side)?.name ??
-                      "静候入席")}
-                </strong>
-                <small>
-                  {sideName(side)}
-                  {!isLocal && room?.side === side ? " · 你" : ""}
-                </small>
+          <div className="players">
+            {(["black", "red"] as Side[]).map((side) => (
+              <div
+                key={side}
+                className={`player-card ${side} ${game.turn === side && !game.result ? "active" : ""}`}
+              >
+                <span className="avatar">{side === "red" ? "帅" : "将"}</span>
+                <div>
+                  <strong>
+                    {isLocal
+                      ? `${sideName(side)}棋手${localBoard.view?.ai?.side === side ? " · AI" : ""}`
+                      : (room?.members.find((m) => m.side === side)?.name ??
+                        "静候入席")}
+                  </strong>
+                  <small>
+                    {sideName(side)}
+                    {!isLocal && room?.side === side ? " · 你" : ""}
+                  </small>
+                </div>
+                <i className="turn-dot" />
               </div>
-              <i className="turn-dot" />
-            </div>
-          ))}
-          <div className="match-status">
+            ))}
+          </div>
+          <div className="match-status" aria-live="polite">
             <span>
               第 <b>{Math.floor(game.ply / 2) + 1}</b> 回合
             </span>
@@ -279,7 +303,7 @@ function App() {
               }
             >
               {game.result
-                ? outcomeNames[game.result.reason]
+                ? `${resultText} · ${outcomeNames[game.result.reason]}`
                 : room?.members.length === 1
                   ? "等待对手"
                   : inCheck(game, game.turn)
@@ -328,9 +352,11 @@ function App() {
             </button>
           </div>
           {mcpLocal && localBoard.view && (
-            <div className="ai-session" aria-live="polite">
-              <span className="label">棋盘标识</span>
-              <code data-testid="board-id">{localBoard.view.boardId}</code>
+            <div
+              className={`ai-session ${localBoard.view.ai ? "ai-active" : ""}`}
+              aria-live="polite"
+            >
+              <div className="desktop-only">{boardDetails}</div>
               {localBoard.view.ai && (
                 <>
                   <strong data-testid="ai-phase">
@@ -344,8 +370,6 @@ function App() {
                       }[localBoard.view.ai.phase]
                     }
                   </strong>
-                  <small>同一棋盘按执色交接，请勿代点 AI 的棋子。</small>
-                  <small>停止 Agent 后，请在此退出 AI 对弈。</small>
                   <button
                     disabled={!localBoard.connected || localBoard.pending}
                     onClick={() => localBoard.send("quit-ai")}
@@ -356,10 +380,11 @@ function App() {
               )}
             </div>
           )}
-          <div className="connection-note">
-            <span
-              className={`connection-dot ${(isLocal ? !mcpLocal || localBoard.connected : connection.status === "已连接") ? "online" : ""}`}
-            />
+          <div
+            className={`connection-note ${connected ? "healthy" : ""}`}
+            role="status"
+          >
+            <span className={`connection-dot ${connected ? "online" : ""}`} />
             {isLocal
               ? mcpLocal
                 ? localBoard.connected
@@ -396,143 +421,145 @@ function App() {
                   : "一局一会"}
             </span>
           </div>
-          <div className="board-stage">
-            <Board
-              game={game}
-              flipped={flipped}
-              selected={selected}
-              targets={targets}
-              choose={choose}
-              enabled={canMove}
-            />
-            {effect && preferences.effects && (
-              <div
-                key={effect.id}
-                className={`tactic-effect ${effect.tactics[0] ?? "finish"} ${effect.mate ? "mate" : ""}`}
-                data-testid="tactic"
-                aria-live="polite"
-              >
-                <div className="ink-ring" />
-                <div className="ink-ring second" />
-                <span className="effect-stamp">
-                  {effect.mate ? "绝杀" : "成招"}
-                </span>
-                <strong>
-                  {effect.tactics[0]
-                    ? tacticNames[effect.tactics[0]]
-                    : "一着定乾坤"}
-                </strong>
-                <small>
-                  {effect.tactics
-                    .slice(1)
-                    .map((t) => tacticNames[t])
-                    .join(" · ")}
-                  {effect.mate ? `　${resultText}` : ""}
-                </small>
-              </div>
-            )}
-            {game.result && (
-              <div className="result-card" data-testid="result">
-                <span className="result-seal">终局</span>
-                <h2>{resultText}</h2>
-                <p>{outcomeNames[game.result.reason]}</p>
-                {(isLocal ||
-                  (room?.members.length === 2 &&
-                    game.result.reason !== "aborted")) && (
-                  <button
-                    className="primary"
-                    disabled={
-                      (mcpLocal && !permitted("rematch")) ||
-                      (!isLocal &&
-                        (connection.pending ||
-                          room?.rematchReady ||
-                          connection.status !== "已连接"))
-                    }
-                    onClick={() => action("rematch")}
-                  >
-                    {room?.rematchReady ? "等待对方同意" : "再来一局"}
-                  </button>
-                )}
-                {!isLocal &&
-                  connection.view?.role === "host" &&
-                  room?.members.length === 1 &&
-                  !room.accepting && (
+          <div className="board-well">
+            <div className="board-stage">
+              <Board
+                game={game}
+                flipped={flipped}
+                selected={selected}
+                targets={targets}
+                choose={choose}
+                enabled={canMove}
+              />
+              {effect && preferences.effects && (
+                <div
+                  key={effect.id}
+                  className={`tactic-effect ${effect.tactics[0] ?? "finish"} ${effect.mate ? "mate" : ""}`}
+                  data-testid="tactic"
+                  aria-live="polite"
+                >
+                  <div className="ink-ring" />
+                  <div className="ink-ring second" />
+                  <span className="effect-stamp">
+                    {effect.mate ? "绝杀" : "成招"}
+                  </span>
+                  <strong>
+                    {effect.tactics[0]
+                      ? tacticNames[effect.tactics[0]]
+                      : "一着定乾坤"}
+                  </strong>
+                  <small>
+                    {effect.tactics
+                      .slice(1)
+                      .map((t) => tacticNames[t])
+                      .join(" · ")}
+                    {effect.mate ? `　${resultText}` : ""}
+                  </small>
+                </div>
+              )}
+              {game.result && (
+                <div className="result-card" data-testid="result">
+                  <span className="result-seal">终局</span>
+                  <h2>{resultText}</h2>
+                  <p>{outcomeNames[game.result.reason]}</p>
+                  {(isLocal ||
+                    (room?.members.length === 2 &&
+                      game.result.reason !== "aborted")) && (
                     <button
                       className="primary"
-                      onClick={() => message({ type: "open-lan" })}
+                      disabled={
+                        (mcpLocal && !permitted("rematch")) ||
+                        (!isLocal &&
+                          (connection.pending ||
+                            room?.rematchReady ||
+                            connection.status !== "已连接"))
+                      }
+                      onClick={() => action("rematch")}
                     >
-                      接待新对手
+                      {room?.rematchReady ? "等待对方同意" : "再来一局"}
                     </button>
                   )}
-              </div>
-            )}
-            {config && !isLocal && !name && (
-              <div className="entry-card">
-                <span className="eyebrow">入席留名</span>
-                <h2>棋逢知己</h2>
-                <p>留一个雅号，开始你的棋局。</p>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    enter();
-                  }}
-                >
-                  <input
-                    autoFocus
-                    aria-label="昵称"
-                    placeholder="你的昵称"
-                    maxLength={24}
-                    value={draftName}
-                    onChange={(e) => setDraftName(e.target.value)}
-                  />
-                  <button className="primary">入席</button>
-                </form>
-              </div>
-            )}
-            {lobby && name && connection.status === "已连接" && (
-              <div className="lobby-card">
-                <span className="eyebrow">四海棋会</span>
-                <h2>寻一位对手</h2>
-                <button
-                  className="primary"
-                  disabled={connection.pending}
-                  onClick={() => message({ type: "create" })}
-                >
-                  创建房间
-                </button>
-                <div className="room-list">
-                  {connection.view?.rooms.length ? (
-                    connection.view.rooms.map((r) => (
-                      <div className="room-row" key={r.id}>
-                        <span>
-                          {r.name}
-                          <small>
-                            {r.players}/2 ·{" "}
-                            {r.status === "waiting"
-                              ? "等待来客"
-                              : r.status === "playing"
-                                ? "对弈中"
-                                : "已终局"}
-                          </small>
-                        </span>
-                        <button
-                          disabled={
-                            r.status !== "waiting" || connection.pending
-                          }
-                          onClick={() =>
-                            message({ type: "join", roomId: r.id })
-                          }
-                        >
-                          加入
-                        </button>
-                      </div>
-                    ))
-                  ) : (
-                    <p>尚无棋局。开一桌，静候来客。</p>
-                  )}
+                  {!isLocal &&
+                    connection.view?.role === "host" &&
+                    room?.members.length === 1 &&
+                    !room.accepting && (
+                      <button
+                        className="primary"
+                        onClick={() => message({ type: "open-lan" })}
+                      >
+                        接待新对手
+                      </button>
+                    )}
                 </div>
-              </div>
-            )}
+              )}
+              {config && !isLocal && !name && (
+                <div className="entry-card">
+                  <span className="eyebrow">入席留名</span>
+                  <h2>棋逢知己</h2>
+                  <p>留一个雅号，开始你的棋局。</p>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      enter();
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      aria-label="昵称"
+                      placeholder="你的昵称"
+                      maxLength={24}
+                      value={draftName}
+                      onChange={(e) => setDraftName(e.target.value)}
+                    />
+                    <button className="primary">入席</button>
+                  </form>
+                </div>
+              )}
+              {lobby && name && connection.status === "已连接" && (
+                <div className="lobby-card">
+                  <span className="eyebrow">四海棋会</span>
+                  <h2>寻一位对手</h2>
+                  <button
+                    className="primary"
+                    disabled={connection.pending}
+                    onClick={() => message({ type: "create" })}
+                  >
+                    创建房间
+                  </button>
+                  <div className="room-list">
+                    {connection.view?.rooms.length ? (
+                      connection.view.rooms.map((r) => (
+                        <div className="room-row" key={r.id}>
+                          <span>
+                            {r.name}
+                            <small>
+                              {r.players}/2 ·{" "}
+                              {r.status === "waiting"
+                                ? "等待来客"
+                                : r.status === "playing"
+                                  ? "对弈中"
+                                  : "已终局"}
+                            </small>
+                          </span>
+                          <button
+                            disabled={
+                              r.status !== "waiting" || connection.pending
+                            }
+                            onClick={() =>
+                              message({ type: "join", roomId: r.id })
+                            }
+                          >
+                            加入
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <p>尚无棋局。开一桌，静候来客。</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <div className="board-foot">
             <span>
@@ -542,38 +569,40 @@ function App() {
             </span>
             <span>水墨 · 象棋</span>
           </div>
-          {game.warning && (
-            <p className="notice">
-              {game.warning.side ? sideName(game.warning.side) : "双方"}：
-              {game.warning.reason}（剩余{" "}
-              {game.warning.side === null
-                ? Math.ceil(game.warning.remaining / 2)
-                : game.warning.remaining}{" "}
-              回合）
-            </p>
-          )}
-          {game.notice && <p className="notice">{game.notice}</p>}
-          {game.drawOffer && (
-            <div className="draw-offer">
-              {sideName(game.drawOffer)}提出和棋
-              {(isLocal || ownSide !== game.drawOffer) && (
-                <>
-                  <button
-                    disabled={!permitted("accept-draw")}
-                    onClick={() => action("accept-draw")}
-                  >
-                    同意和棋
-                  </button>
-                  <button
-                    disabled={!permitted("decline-draw")}
-                    onClick={() => action("decline-draw")}
-                  >
-                    继续对弈
-                  </button>
-                </>
-              )}
-            </div>
-          )}
+          <div className="board-notices" aria-live="polite">
+            {game.warning && (
+              <p className="notice">
+                {game.warning.side ? sideName(game.warning.side) : "双方"}：
+                {game.warning.reason}（剩余{" "}
+                {game.warning.side === null
+                  ? Math.ceil(game.warning.remaining / 2)
+                  : game.warning.remaining}{" "}
+                回合）
+              </p>
+            )}
+            {game.notice && <p className="notice">{game.notice}</p>}
+            {game.drawOffer && (
+              <div className="draw-offer">
+                {sideName(game.drawOffer)}提出和棋
+                {(isLocal || ownSide !== game.drawOffer) && (
+                  <>
+                    <button
+                      disabled={!permitted("accept-draw")}
+                      onClick={() => action("accept-draw")}
+                    >
+                      同意和棋
+                    </button>
+                    <button
+                      disabled={!permitted("decline-draw")}
+                      onClick={() => action("decline-draw")}
+                    >
+                      继续对弈
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </section>
         <aside className="records-panel panel">
           <div className="eyebrow">
@@ -588,7 +617,7 @@ function App() {
             <span>红方</span>
             <span>黑方</span>
           </div>
-          <div className="records-scroll">
+          <div className="records-scroll" ref={recordsScroll}>
             {game.history.length ? (
               Array.from(
                 { length: Math.ceil(game.history.length / 2) },
@@ -617,7 +646,6 @@ function App() {
                 <small>一招一式，皆成文章</small>
               </div>
             )}
-            <div ref={recordsEnd} />
           </div>
           <div className="records-footer">
             <span>●</span> 棋谱仅在本次对局保留
@@ -674,6 +702,7 @@ function App() {
                 />
               </label>
             ))}
+            <div className="portrait-only">{boardDetails}</div>
             <p className="muted">
               偏好保存在当前浏览器 Cookie 中。音效由首次操作启用。
             </p>

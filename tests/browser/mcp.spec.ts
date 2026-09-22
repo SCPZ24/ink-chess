@@ -99,10 +99,11 @@ test("human and AI alternate through actual board clicks, wait locks one move, a
   await page.goto(url);
   const id = page.getByTestId("board-id");
   await expect(id).toBeVisible();
+  const boardId = await id.textContent();
   const s = (
     await client.callTool({
       name: "enter_chess",
-      arguments: { board_id: await id.textContent(), ai_side: "red" },
+      arguments: { board_id: boardId, ai_side: "red" },
     })
   ).structuredContent as ChessEvent;
   await expect(page.getByTestId("ai-phase")).toHaveText("AI 行棋");
@@ -133,6 +134,15 @@ test("human and AI alternate through actual board clicks, wait locks one move, a
   await expect(
     page.getByRole("button", { name: "退出 AI 对弈" }),
   ).toBeVisible();
+  await expect(page.getByTestId("ai-phase")).toHaveText("轮到你了");
+  await expect(page.locator(".records-panel")).toBeHidden();
+  await expect(page.getByTestId("board-id")).toBeHidden();
+  await page.getByRole("button", { name: "偏好设置" }).click();
+  await expect(page.getByRole("dialog").getByTestId("board-id")).toBeVisible();
+  await expect(page.getByRole("dialog").getByTestId("board-id")).toHaveText(
+    boardId!,
+  );
+  await page.getByRole("button", { name: "完成设置" }).click();
   await page.screenshot({
     path: "test-results/mcp-mobile.png",
     fullPage: true,
